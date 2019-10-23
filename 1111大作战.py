@@ -109,12 +109,12 @@ def is_share(img):
         for y in range(int(Y/2)):
             if grey_target[y,x]<130:
                 count+=1
-                if count/(X*Y/2)>=0.95:
-                    print("检测到当前页面是分享页面！")
-                    print("当前页面黑色占比：%f" %  (count/(X*Y/2),))
-                    return True
+                
     
-    
+    if count/(X*Y/2)>=0.95:
+        print("检测到当前页面是分享页面！")
+        print("当前页面黑色占比：%f" %  (count/(X*Y/2),))
+        return True
     return False
     
     
