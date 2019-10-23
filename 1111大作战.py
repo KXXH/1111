@@ -6,6 +6,8 @@ import matplotlib.animation as animation
 import cv2
 import time
 import numpy as np
+import re
+import codecs
 
 scale = 0.25
 threshold = 50
@@ -13,6 +15,9 @@ threshold = 50
 
 TB_X_limit=(int(190),int(250))
 TB_Y_limit=(int(180),int(490))
+
+CAT_ENTER_BTN=(222,29)
+GET_CATCOIN_BTN=(237,423)
 
 def convert_btn_list(img):
     #裁切截图，获取按钮列图片
@@ -43,7 +48,7 @@ def convert_btn_list(img):
         if i>=1 and btn_full[i-1,x_mid]!=btn_full[i,x_mid]: #上面一个像素点和当前像素点颜色不一致
             p_list.append(i)
     print(p_list)
-    assert len(p_list)%2==0
+    assert len(p_list)%2==0 and len(p_list)>0
     y_target=[]
 
     for i in range(0,len(p_list)-1,2):
@@ -104,14 +109,35 @@ def is_share(img):
         for y in range(int(Y/2)):
             if grey_target[y,x]<130:
                 count+=1
-                if count/(X*Y/2)>=0.9:
+                if count/(X*Y/2)>=0.95:
                     print("检测到当前页面是分享页面！")
+                    print("当前页面黑色占比：%f" %  (count/(X*Y/2),))
                     return True
     
     
     return False
     
     
+def get_content_xml():
+    cmd='adb shell /system/bin/uiautomator dump /data/local/tmp/tmpUI.xml'
+    os.system(cmd)
+    time.sleep(2)
+    cmd='adb pull /data/local/tmp/tmpUI.xml content.xml'
+    os.system(cmd)
+    time.sleep(1)
+    f=codecs.open('content.xml','r','utf-8')
+    strXml=''.join(f.readlines())
+    return strXml
+
+def isTaskList():
+    strXml=get_content_xml()
+    pattern='分享|完成|浏览'
+    if re.search(pattern,strXml) is None:
+        return False
+    else:
+        return True
+
+
 def shopping(t):
     cmd = "adb shell input swipe 300 600 300 100 1000"
     for i in range(t):
@@ -120,6 +146,36 @@ def shopping(t):
         print("正在逛街%d/%d秒" % (i+1,t))
         time.sleep(1)
 
+def get_current_activity():
+    cmd = ' adb shell dumpsys activity activities | findstr "Run"'
+    pattern = 'com.taobao.taobao/(.*) t\d+}\n '
+    ans=os.popen(cmd)
+    strans=''.join(ans.readlines())
+    reans = re.findall(pattern,strans)
+    assert len(reans)>0
+    return reans[0]
+
+def from_home_to_cat():
+    press(CAT_ENTER_BTN[0],CAT_ENTER_BTN[1])
+
+def from_cat_to_tasklist():
+    press(GET_CATCOIN_BTN[0],GET_CATCOIN_BTN[1])
+
+def ensure_is_in_tasklist():
+    if get_current_activity()=='com.taobao.tao.TBMainActivity':
+        print('在主页')
+        from_home_to_cat()
+        time.sleep(5)
+        from_cat_to_tasklist()
+        time.sleep(3)
+    elif get_current_activity()=='com.taobao.browser.BrowserActivity':
+        if isTaskList():
+            pass
+        else:
+            print('不在猫币页面，尝试回到猫币页面……')
+            from_cat_to_tasklist()
+
+ensure_is_in_tasklist()
 
 fig = plt.figure()
 pull_screenshot()
@@ -136,6 +192,7 @@ x_mid,y_target=convert_btn_list(img)
 i=0
 #对于每一个按钮
 while i<len(y_target):
+    ensure_is_in_tasklist()
     #按下去
     press(x_mid+TB_X_limit[0],y_target[i])
     time.sleep(3)   #等三秒让页面加载
@@ -151,11 +208,17 @@ while i<len(y_target):
         back()
         pull_screenshot()   #拉取新的截图
         img_t = update_data() 
-        x_mid_t,y_target_t=convert_btn_list(img_t)
-        if y_target[i] in  y_target_t:  #如果按钮还可以点击
-            continue
-        else:
-            i+=1
+        try:
+            x_mid_t,y_target_t=convert_btn_list(img_t)
+        except AssertionError :
+            from_cat_to_tasklist()
+            x_mid_t,y_target_t=convert_btn_list(img_t)
+        finally:
+            if y_target[i] in  y_target_t:  #如果按钮还可以点击
+                pass
+            else:
+                i+=1
+    
 
 cv2.waitKey(0)
 plt.show()
